@@ -3,56 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Final Project Proposal</title>
+    <title>Cloth Simulation - Parallel Computing Project</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            padding: 20px;
-            background-color: #f4f4f4;
-        }
-        .container {
-            max-width: 800px;
-            margin: auto;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        h1, h2 {
-            color: #333;
-        }
-        p {
-            line-height: 1.6;
-        }
+        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+        h1, h2 { color: #333; }
+        .container { max-width: 800px; margin: auto; }
+        .section { margin-bottom: 20px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Final Project Proposal</h1>
-        <h2>Title</h2>
-        <p>Optimized Parallel Computation for Large-Scale Data Processing</p>
+        <h1>Cloth Simulation - Parallel Computing Project</h1>
+        <h3>Team Members: [Your Name], [Partner's Name]</h3>
         
-        <h2>Summary</h2>
-        <p>We aim to develop an efficient parallel computing solution for processing large datasets using GPU acceleration. Our project will focus on optimizing performance using CUDA and OpenMP.</p>
-        
-        <h2>Background</h2>
-        <p>This project is motivated by the need for faster data processing in scientific computing. We will implement and compare parallel solutions on different architectures.</p>
-        
-        <h2>The Challenge</h2>
-        <p>The main challenges include workload distribution, minimizing memory bottlenecks, and optimizing synchronization overhead.</p>
-        
-        <h2>Resources</h2>
-        <p>We will use CUDA-enabled GPUs, multi-core CPUs, and benchmarking tools. Initial implementations will be tested on AWS EC2 GPU instances.</p>
-        
-        <h2>Goals & Deliverables</h2>
-        <p>Our primary goal is achieving a 10x speedup compared to a single-threaded implementation. We will also analyze power consumption and efficiency.</p>
-        
-        <h2>Platform Choice</h2>
-        <p>CUDA and OpenMP are chosen for their support in high-performance parallel computing and compatibility with our target hardware.</p>
-        
-        <h2>Schedule</h2>
-        <p>Week 1: Literature review and setup.<br>Week 2-3: Implementation of baseline algorithms.<br>Week 4: Performance tuning and optimization.<br>Week 5: Final evaluation and report writing.</p>
+        <div class="section">
+            <h2>Summary</h2>
+            <p>We aim to implement a parallel cloth simulation using a Mass-Spring model. The simulation will run efficiently on GPUs using CUDA to accelerate computations. We will explore different parallelization strategies to optimize performance and scalability.</p>
+        </div>
+
+        <div class="section">
+            <h2>Background</h2>
+            <p>Cloth simulation is widely used in gaming, animation, and physical simulations. It involves computing forces for each mass point, integrating movement over time, and handling collision detection. A parallel implementation is necessary to handle high-resolution cloth in real-time.</p>
+        </div>
+
+        <div class="section">
+            <h2>The Challenge</h2>
+            <p>The main challenges include optimizing memory access patterns, ensuring proper load balancing across threads, reducing synchronization overhead, and efficiently handling self-collision detection.</p>
+        </div>
+
+        <div class="section">
+            <h2>Resources</h2>
+            <p>We will use CUDA-enabled GPUs for acceleration, Pygame for visualization, and existing physics-based references on cloth simulation. Our implementation will build on the starter code developed in Python.</p>
+        </div>
+
+        <div class="section">
+            <h2>Goals & Deliverables</h2>
+            <ul>
+                <li>Implement a parallelized Mass-Spring Model for cloth simulation.</li>
+                <li>Optimize data access using shared memory and coalesced memory access.</li>
+                <li>Explore different work scheduling strategies (static vs. dynamic).</li>
+                <li>Visualize simulation results in real-time.</li>
+                <li>Evaluate performance compared to a CPU-based implementation.</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>Platform Choice</h2>
+            <p>We will use CUDA for parallel computation due to its ability to handle large-scale physics-based simulations efficiently. The computations map well to the GPU thread model, and memory access optimizations will be explored.</p>
+        </div>
+
+        <div class="section">
+            <h2>Schedule</h2>
+            <ul>
+                <li>Week 1: Implement basic Mass-Spring simulation (serial version).</li>
+                <li>Week 2: Parallelize computation using CUDA.</li>
+                <li>Week 3: Implement collision detection and load balancing.</li>
+                <li>Week 4: Optimize memory access and benchmark performance.</li>
+                <li>Week 5: Final testing, report writing, and visualization improvements.</li>
+            </ul>
+        </div>
     </div>
 </body>
 </html>
+
