@@ -5,38 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloth Simulation - Parallel Computing Project</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-        h1, h2 { color: #333; }
-        .container { max-width: 800px; margin: auto; }
-        .section { margin-bottom: 20px; }
+        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; background-color: #f4f4f4; }
+        h1 { text-align: center; color: #333; background: #007acc; padding: 15px; border-radius: 10px; color: white; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0px 0px 10px rgba(0,0,0,0.1); }
+        .buttons { display: flex; justify-content: space-around; margin-bottom: 20px; }
+        button { background: #007acc; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; font-size: 16px; }
+        button:hover { background: #005fa3; }
+        .section { display: none; padding: 10px; }
+        .active { display: block; }
     </style>
+    <script>
+        function showSection(sectionId) {
+            let sections = document.querySelectorAll('.section');
+            sections.forEach(section => section.classList.remove('active'));
+            document.getElementById(sectionId).classList.add('active');
+        }
+    </script>
 </head>
 <body>
     <div class="container">
         <h1>Cloth Simulation - Parallel Computing Project</h1>
-        <h3>Team Members: [Your Name], [Partner's Name]</h3>
+        <div class="buttons">
+            <button onclick="showSection('summary')">Summary</button>
+            <button onclick="showSection('background')">Background</button>
+            <button onclick="showSection('challenge')">Challenges</button>
+            <button onclick="showSection('resources')">Resources</button>
+            <button onclick="showSection('goals')">Goals</button>
+            <button onclick="showSection('platform')">Platform</button>
+            <button onclick="showSection('schedule')">Schedule</button>
+        </div>
         
-        <div class="section">
+        <div id="summary" class="section active">
             <h2>Summary</h2>
             <p>We aim to implement a parallel cloth simulation using a Mass-Spring model. The simulation will run efficiently on GPUs using CUDA to accelerate computations. We will explore different parallelization strategies to optimize performance and scalability.</p>
         </div>
 
-        <div class="section">
+        <div id="background" class="section">
             <h2>Background</h2>
             <p>Cloth simulation is widely used in gaming, animation, and physical simulations. It involves computing forces for each mass point, integrating movement over time, and handling collision detection. A parallel implementation is necessary to handle high-resolution cloth in real-time.</p>
         </div>
 
-        <div class="section">
-            <h2>The Challenge</h2>
+        <div id="challenge" class="section">
+            <h2>Challenges</h2>
             <p>The main challenges include optimizing memory access patterns, ensuring proper load balancing across threads, reducing synchronization overhead, and efficiently handling self-collision detection.</p>
         </div>
 
-        <div class="section">
+        <div id="resources" class="section">
             <h2>Resources</h2>
             <p>We will use CUDA-enabled GPUs for acceleration, Pygame for visualization, and existing physics-based references on cloth simulation. Our implementation will build on the starter code developed in Python.</p>
         </div>
 
-        <div class="section">
+        <div id="goals" class="section">
             <h2>Goals & Deliverables</h2>
             <ul>
                 <li>Implement a parallelized Mass-Spring Model for cloth simulation.</li>
@@ -47,12 +66,12 @@
             </ul>
         </div>
 
-        <div class="section">
+        <div id="platform" class="section">
             <h2>Platform Choice</h2>
             <p>We will use CUDA for parallel computation due to its ability to handle large-scale physics-based simulations efficiently. The computations map well to the GPU thread model, and memory access optimizations will be explored.</p>
         </div>
 
-        <div class="section">
+        <div id="schedule" class="section">
             <h2>Schedule</h2>
             <ul>
                 <li>Week 1: Implement basic Mass-Spring simulation (serial version).</li>
@@ -65,4 +84,3 @@
     </div>
 </body>
 </html>
-
