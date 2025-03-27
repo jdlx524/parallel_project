@@ -36,50 +36,239 @@
         </div>
         
         <div id="summary" class="section active">
-            <h2>Summary</h2>
             <p>We aim to implement a parallel cloth simulation using a Mass-Spring model. The simulation will run efficiently on GPUs using CUDA to accelerate computations. We will explore different parallelization strategies to optimize performance and scalability.</p>
         </div>
 
         <div id="background" class="section">
-            <h2>Background</h2>
-            <p>Cloth simulation is widely used in gaming, animation, and physical simulations. It involves computing forces for each mass point, integrating movement over time, and handling collision detection. A parallel implementation is necessary to handle high-resolution cloth in real-time.</p>
+            <h3>Application Overview</h3>
+            <p>In this project, we plan to perform a cloth simulation on an irregular 3D surface, which may also include collision simulations that require dynamic task allocation techniques.
+                The simulation involves not only handling the deformation and forces acting on the cloth but also collision detection and response with surrounding objects.
+                During the simulation, the system needs to update forces (such as gravity, elasticity, and air resistance) on every vertex of the cloth in real-time or near real-time,
+                as well as detect and handle collisions between cloth vertices or triangles and external objects. </p>
+
+            <p>Because the cloth is typically composed of a large number of mesh vertices and triangular faces, and every vertex may be subject to distinct constraints and
+                collisions when placed on an irregular surface, the computational workload can be substantial. Moreover, collision detection often requires repeated, intensive spatial
+                queries for different regions or objects, with computational cost growing rapidly as the cloth mesh or scene complexity increases. To address this challenge,
+                we plan to split the cloth simulation into multiple smaller tasks that can be processed in parallel, such as partitioning the cloth into sub-regions for force
+                and collision computations, and dynamically merging or splitting these sub-tasks depending on the simulation load. This approach will make full use of multi-core
+                or multi-threaded architectures to increase overall simulation performance.
+            </p>
+
+            <p>Below is a simplified pseudocode demonstrating the simulation workflow:</p>
+
+            <pre><code>
+                initialize cloth mesh
+                while simulation is running:
+                    for each sub-region or mesh partition in parallel:
+                        compute internal forces (tension, bending, etc.)
+                        detect and resolve collisions with environment
+                        update positions and velocities of vertices
+                    synchronize updated mesh state across sub-regions
+                render or output simulation results
+            </code></pre>
+            <h3>Possible Parallel</h3>
+            <p>By partitioning the cloth mesh into smaller sub-regions and processing them in parallel, each thread or computational unit only needs to handle a limited set of vertices
+                or triangles, thus reducing the computational cost and memory access overhead for collision detection and other tasks. Furthermore, as the cloth moves or collision demands
+                change, we can dynamically adjust the partitioning and scheduling strategy to prevent any thread from being either underutilized or overloaded, and thereby further optimize overall performance. </p>
+
         </div>
 
         <div id="challenge" class="section">
-            <h2>Challenges</h2>
-            <p>The main challenges include optimizing memory access patterns, ensuring proper load balancing across threads, reducing synchronization overhead, and efficiently handling self-collision detection.</p>
+            <h3>The Challenge</h3>
+            <p>One of the main challenges of this cloth simulation project is the inherently irregular and dynamic nature of the problem. Each cloth vertex’s movement and collisions
+                depend not only on its immediate neighbors for forces such as tension and bending but also on the state of the environment, which can vary widely across the surface.
+                This leads to complex dependencies where results in one region of the cloth can impact calculations in another region. Additionally, frequent and unpredictable collision
+                checks introduce irregular memory access patterns: data may need to be fetched from disparate memory locations, complicating caching and reducing spatial and temporal locality.
+                As a result, the communication-to-computation ratio can become high if each sub-region must constantly exchange boundary information or resolve interactions with other sub-regions.</p>
+            <p>These factors make it difficult to parallelize the workload in a straightforward manner. Some parts of the cloth may experience heavy collisions or intricate deformations
+                (thus requiring extensive computation), while others remain relatively stable—leading to divergent execution. Balancing this load evenly across multiple threads or computational
+                units becomes a non-trivial task. Moreover, dynamically reallocating sub-regions or tasks at runtime to accommodate changing collision patterns introduces additional overhead and synchronization demands.</p>
+            <h3>Constrains</h3>
+            <p>Mapping the workload to a parallel system is further constrained by the need to maintain a globally consistent state. Each time step must correctly account for updates in all sub-regions,
+                and any collisions across boundaries of these sub-regions must be handled without race conditions or data inconsistencies. On hardware with limited shared memory or certain GPU architectures,
+                the irregular access patterns and sudden spikes in computational requirements can cause bottlenecks and underutilized resources. Consequently, one of the core lessons to be learned in this
+                project is how to design dynamic, load-balanced partitioning strategies and synchronization mechanisms that accommodate frequent changes in the simulation state while still achieving efficient parallelization.</p>
+
         </div>
 
         <div id="resources" class="section">
-            <h2>Resources</h2>
-            <p>We will use CUDA-enabled GPUs for acceleration, Pygame for visualization, and existing physics-based references on cloth simulation. Our implementation will build on the starter code developed in Python.</p>
+            <p>We plan to begin with a simple parallel cloth simulation code base—likely an open-source project that already supports basic multi-threading—so that we can focus our efforts on implementing and evaluating our
+                own dynamic partitioning and task allocation strategies. We will run and test our code on standard multi-core CPUs and potentially on a GPU-equipped workstation if it proves beneficial for accelerating certain
+                aspects of the simulation. As a reference, we will draw on established literature in cloth simulation, such as Baraff and Witkin’s seminal paper “Large Steps in Cloth Simulation” (Baraff, D., & Witkin, A. (1998).
+                Large steps in cloth simulation. <b>ACM SIGGRAPH</b>), to inform our approaches to collision handling and numerical integration. Beyond these resources, we do not currently anticipate needing access to specialized
+                hardware beyond high-core-count machines or general-purpose GPUs, though we remain open to exploring more advanced HPC clusters if our simulation’s requirements grow.</p>
         </div>
 
         <div id="goals" class="section">
-            <h2>Goals & Deliverables</h2>
+            <h3>Plan to Achieve</h3>
+            <p>These are the core objectives that we must accomplish to consider our project successful and meet our expected grading criteria:</p>
+
             <ul>
-                <li>Implement a parallelized Mass-Spring Model for cloth simulation.</li>
-                <li>Optimize data access using shared memory and coalesced memory access.</li>
-                <li>Explore different work scheduling strategies (static vs. dynamic).</li>
-                <li>Visualize simulation results in real-time.</li>
-                <li>Evaluate performance compared to a CPU-based implementation.</li>
+                <li><strong>Implement and Evaluate Dynamic Partitioning Strategies</strong>
+                    <ul>
+                        <li>Integrate dynamic partitioning and task allocation methods into an existing parallel cloth simulation framework.</li>
+                        <li>Compare our approach against static partitioning to demonstrate performance benefits.</li>
+                    </ul>
+                </li>
+                <li><strong>Multi-Threaded CPU Performance Analysis</strong>
+                    <ul>
+                        <li>Run simulations on multi-core CPUs to measure scaling efficiency as core count increases.</li>
+                        <li>Analyze task distribution overhead and load balancing effectiveness.</li>
+                    </ul>
+                </li>
+                <li><strong>Collision Handling and Numerical Integration</strong>
+                    <ul>
+                        <li>Implement efficient collision detection and response informed by Baraff and Witkin’s "Large Steps in Cloth Simulation."</li>
+                        <li>Optimize numerical integration techniques to ensure simulation stability at larger time steps.</li>
+                    </ul>
+                </li>
+                <li><strong>Quantitative Performance Metrics</strong>
+                    <ul>
+                        <li>Establish baseline performance metrics using the original simulation.</li>
+                        <li>Measure speedup, efficiency, and accuracy under different workload distributions.</li>
+                    </ul>
+                </li>
+                <li><strong>Documentation and Code Organization</strong>
+                    <ul>
+                        <li>Ensure the codebase is well-documented for reproducibility.</li>
+                        <li>Provide clear experimental methodologies and justifications.</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h3>Hope to Achieve</h3>
+            <p>If the project progresses ahead of schedule, we aim to explore additional enhancements:</p>
+
+            <ul>
+                <li><strong>GPU Acceleration</strong>
+                    <ul>
+                        <li>Investigate GPU offloading to accelerate computationally expensive simulation steps.</li>
+                        <li>Compare CPU vs. GPU performance for key simulation components.</li>
+                    </ul>
+                </li>
+                <li><strong>Adaptive Workload Distribution</strong>
+                    <ul>
+                        <li>Implement a feedback mechanism that dynamically adjusts task allocation based on real-time performance metrics.</li>
+                        <li>Evaluate the benefits of adaptive workload balancing in varying simulation scenarios.</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h3>Live Demo</h3>
+            <p>If feasible, we plan to showcase a live demo during the poster session:</p>
+            <ul>
+                <li>A side-by-side comparison of different task allocation strategies visualized in real-time.</li>
+                <li>Performance charts illustrating speedup and efficiency improvements.</li>
+                <li>Interactive tuning of simulation parameters to highlight dynamic workload adjustments.</li>
+            </ul>
+
+            <h3>Key Questions to Address</h3>
+            <ul>
+                <li>How effectively does dynamic partitioning improve performance over static partitioning?</li>
+                <li>What are the primary bottlenecks in parallel cloth simulation on multi-core CPUs?</li>
+                <li>Can GPU acceleration provide a significant advantage for computationally intensive tasks?</li>
+                <li>How does the choice of partitioning strategy impact collision detection accuracy and numerical stability?</li>
+            </ul>
+
+            <h3>System Capabilities and Performance Goals</h3>
+            <ul>
+                <li>The system will support real-time or near-real-time cloth simulation using parallel processing.</li>
+                <li>We hope to achieve at least a <strong>5x speedup</strong> over the baseline sequential implementation on a high-core-count CPU.</li>
+                <li>If GPU acceleration is explored, we aim for an <strong>additional 2x-3x speedup</strong> in specific workloads such as numerical integration and collision handling.</li>
             </ul>
         </div>
 
         <div id="platform" class="section">
-            <h2>Platform Choice</h2>
-            <p>We will use CUDA for parallel computation due to its ability to handle large-scale physics-based simulations efficiently. The computations map well to the GPU thread model, and memory access optimizations will be explored.</p>
+            <h3>Platform Choice</h3>
+            <p> We have chosen a standard multi-core CPU platform (with optional GPU acceleration) and a C++-based simulation framework because this
+                setup aligns well with our parallelization goals and performance requirements. (Possibly GHC machine or our own computer)</p>
+            <p> C++ offers efficient low-level control over data structures and memory management, which is critical for irregular workloads like cloth simulation.
+                Multi-core CPUs (and GPUs, if available) provide the parallel computing capabilities we need to divide and distribute the simulation tasks across multiple
+                threads or compute units. Additionally, existing libraries and parallel frameworks (such as OpenMP, TBB, or CUDA) allow us to quickly prototype and optimize
+                various load balancing and synchronization strategies. This combination makes it feasible to implement our dynamic partitioning approach, manage unpredictable
+                collision workloads, and still maintain high performance and scalability.</p>
         </div>
 
         <div id="schedule" class="section">
-            <h2>Schedule</h2>
-            <ul>
-                <li>Week 1: Implement basic Mass-Spring simulation (serial version).</li>
-                <li>Week 2: Parallelize computation using CUDA.</li>
-                <li>Week 3: Implement collision detection and load balancing.</li>
-                <li>Week 4: Optimize memory access and benchmark performance.</li>
-                <li>Week 5: Final testing, report writing, and visualization improvements.</li>
-            </ul>
+                <h3>Week of March 27 &ndash; April 2</h3>
+                <ul>
+                    <li><strong>Finalize code base choice and references</strong>
+                        <ul>
+                            <li>Select an existing parallel cloth simulation code base to build upon.</li>
+                            <li>Gather and review key literature (e.g., Baraff &amp; Witkin) to ensure understanding of collision handling and integration approaches.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Set up the development environment</strong>
+                        <ul>
+                            <li>Configure compilers, libraries (e.g., OpenMP, TBB, or CUDA), and any dependencies needed for the cloth simulation.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h3>Week of April 3 &ndash; April 9</h3>
+                <ul>
+                    <li><strong>Run and analyze the baseline code</strong>
+                        <ul>
+                            <li>Compile and run the chosen parallel cloth simulation on sample scenes.</li>
+                            <li>Measure performance metrics (e.g., runtime, scaling) to establish a baseline.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Identify bottlenecks</strong>
+                        <ul>
+                            <li>Perform a preliminary bottleneck analysis on collision detection, force calculation, and other high-cost operations.</li>
+                            <li>Draft ideas for dynamic task allocation and partitioning.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h3>Week of April 10 &ndash; April 16 <em>(Intermediate Milestone: April 15)</em></h3>
+                <ul>
+                    <li><strong>Implement first version of dynamic partitioning</strong>
+                        <ul>
+                            <li>Introduce sub-region partitioning in the simulation loop.</li>
+                            <li>Implement a basic load-balancing mechanism (static or straightforward dynamic).</li>
+                        </ul>
+                    </li>
+                    <li><strong>Validate correctness and performance</strong>
+                        <ul>
+                            <li>Ensure cloth simulation still behaves physically correct.</li>
+                            <li>Collect initial performance results on test scenes.</li>
+                            <li>Document progress for the intermediate milestone due on April 15.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h3>Week of April 17 &ndash; April 23</h3>
+                <ul>
+                    <li><strong>Refine and optimize the dynamic strategy</strong>
+                        <ul>
+                            <li>Adjust partitioning granularity and update intervals.</li>
+                            <li>Improve collision handling and memory access patterns (e.g., bounding volume hierarchies, spatial hashing).</li>
+                        </ul>
+                    </li>
+                    <li><strong>Conduct thorough performance testing</strong>
+                        <ul>
+                            <li>Test on different cloth sizes and irregular surfaces.</li>
+                            <li>Compare improvements against the baseline in terms of speed, scalability, and load balance.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h3>Week of April 24 &ndash; April 29 <em>(Poster Due: April 29)</em></h3>
+                <ul>
+                    <li><strong>Finalize results and prepare the poster</strong>
+                        <ul>
+                            <li>Summarize performance gains, scalability charts, and key findings.</li>
+                            <li>Highlight any remaining challenges or potential improvements for future work.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Present and submit the project poster</strong>
+                        <ul>
+                            <li>Create a concise narrative of the work, focusing on the parallelization strategy, results, and lessons learned.</li>
+                            <li>Polish visualizations, diagrams, and data to include in the poster.</li>
+                        </ul>
+                    </li>
+                </ul>
         </div>
     </div>
 </body>
