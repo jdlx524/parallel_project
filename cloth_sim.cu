@@ -109,9 +109,7 @@ void render() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // 设置背景为白色
     glLoadIdentity();
-    gluLookAt(300, 300, 800,  // 观察点更远
-              300, 300, 0,
-              0, 1, 0);
+    gluLookAt(300, 300, -800, 300, 300, 300, 0, 1, 0);
 
     glEnable(GL_DEPTH_TEST);  // 确保深度测试打开
     glEnable(GL_POINT_SMOOTH);
@@ -120,7 +118,7 @@ void render() {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glPointSize(10.0f); // 让点更大
-    glColor3f(1.0, 1.0, 1.0); // 红点
+    glColor3f(1.0, 0.0, 0.0); // 红点
     glBegin(GL_POINTS);
     for (int j = 0; j < GRID_SIZE; j++) {
         for (int i = 0; i < GRID_SIZE; i++) {
@@ -157,7 +155,26 @@ int main(int argc, char** argv) {
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
     glutInitWindowSize(WIDTH, HEIGHT);
     glutCreateWindow("3D Cloth Simulation");
+
+    // 设置视口
+    glViewport(0, 0, WIDTH, HEIGHT);
+
+    // ✅ 设置透视投影矩阵
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(60.0, (float)WIDTH / HEIGHT, 1.0, 2000.0);  // fov, aspect, near, far
+
+    // ✅ 设置模型视图矩阵（观察矩阵）
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // ✅ 启用基本功能
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_POINT_SMOOTH);
+    glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     glutDisplayFunc(display);
     glutIdleFunc(display);
     glutMainLoop();
