@@ -156,18 +156,31 @@ int main(int argc, char** argv) {
     glutInitWindowSize(WIDTH, HEIGHT);
     glutCreateWindow("3D Cloth Simulation");
 
-    // 设置视口
-    glViewport(0, 0, WIDTH, HEIGHT);
+    // // 设置视口
+    // glViewport(0, 0, WIDTH, HEIGHT);
 
-    // ✅ 设置透视投影矩阵
+    // // ✅ 设置透视投影矩阵
+    // glMatrixMode(GL_PROJECTION);
+    // glLoadIdentity();
+    // gluPerspective(60.0, (float)WIDTH / HEIGHT, 1.0, 2000.0);  // fov, aspect, near, far
+
+    // // ✅ 设置模型视图矩阵（观察矩阵）
+    // glMatrixMode(GL_MODELVIEW);
+    // glLoadIdentity();
+    // 在 main() 里
+    glViewport(0, 0, WIDTH, HEIGHT);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(60.0, (float)WIDTH / HEIGHT, 1.0, 2000.0);  // fov, aspect, near, far
-
-    // ✅ 设置模型视图矩阵（观察矩阵）
+    gluPerspective(45.0, (float)WIDTH / HEIGHT, 1.0, 2000.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
+    // 在 render() 或 display() 里
+    glLoadIdentity();
+    gluLookAt(300, 300, 800,   // 相机位置：x=300, y=300, z=800
+            300, 300, 0,     // 看的目标点：x=300, y=300, z=0
+            0, 1, 0);        // up 向量】
+            
     // ✅ 启用基本功能
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_POINT_SMOOTH);
