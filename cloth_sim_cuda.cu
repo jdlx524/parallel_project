@@ -1,17 +1,16 @@
-// cloth_sim_cuda.cu
-// 注意：编译时需要用 nvcc，并链接 OpenGL、GLU、glut、GLEW 库
+// cloth_sim_cuda_explicit.cu
+// 注：本代码使用 CUDA 进行物理计算，但不使用 CUDA-OpenGL 互操作，而是通过显式的 cudaMemcpy 从设备复制数据到主机，再由 OpenGL 更新 VBO。
 #include <GL/glew.h>
 #include <GL/glut.h>
 
 #include <cuda_runtime.h>
-#include <cuda_gl_interop.h>
 
 #include <iostream>
 #include <cstring>
 #include <vector>
 #include <cmath>
 
-// 使用 CUDA 内置的 float3 类型，无需自定义
+// CUDA 内置 float3 类型可以直接使用
 
 // 根据 HIQ 宏选择测试规模和迭代次数
 #define HIQ
@@ -41,15 +40,17 @@ static GLuint vbo = 0;
 static GLuint cbo = 0;
 static GLuint nbo = 0;
 
-// host 侧数据：顶点、颜色、法线、索引（数据格式均为连续数组）
-static std::vector<float> vertices; // 每三个 float 为一个顶点 (x,y,z)
+// host 侧数据：顶点、颜色、法线、indices（连续数组）  
+// 每个顶点由3个 float 组成，颜色为 RGBA（4个 float）
+static std::vector<float> vertices;
 static std::vector<float> colors;
 static std::vector<float> normals;
 static std::vector<int> indices;
 
-// cuda-OpenGL 互操作资源句柄
-struct cudaGraphicsResource* vbo_resource = nullptr;
-struct cudaGraphicsResource* nbo_resource = nullptr;
+// 设备侧数据指针
+static float3* d_vertices = nullptr;
+static float3* d_velocities = nullptr;
+static float3* d_normals = nullptr;
 
 // 约束参数，全局变量
 static float cnstr_two;
@@ -58,15 +59,11 @@ static float cnstr_dia;
 // 帧计数
 static size_t frames = 0;
 
-// 设备侧速度数据指针（用来更新物理积分）
-static float3* d_velocities = nullptr;
-
 /**************************************************
  * 设备侧辅助函数（__host__ __device__）
  **************************************************/
 
-// 更新一个顶点位置（device 函数）
-// 使用速度更新位置；若点的距离平方大于1，则在 z 方向上做修正
+// 更新顶点位置：若点的距离平方 > 1，则在 z 方向上施加修正；然后按速度积分更新位置
 __host__ __device__ __forceinline__
 void update_positions_device(float3 &pos, float3 &vel, const float eps) {
     float dist2 = pos.x * pos.x + pos.y * pos.y + pos.z * pos.z;
@@ -77,7 +74,7 @@ void update_positions_device(float3 &pos, float3 &vel, const float eps) {
     pos.z += eps * vel.z;
 }
 
-// 将顶点“贴”到球面上，如果距离大于 1，则按比例缩放到 1
+// 将点"贴"到球面上：若距离大于 1，则按比例缩放到 1
 __host__ __device__ __forceinline__
 void adjust_positions_device(float3 &pos) {
     float len2 = pos.x*pos.x + pos.y*pos.y + pos.z*pos.z;
@@ -87,7 +84,7 @@ void adjust_positions_device(float3 &pos) {
     pos.z *= (invrho < 1.0f ? invrho : 1.0f);
 }
 
-// 约束修正：使两个点的距离趋向于目标 distance（constraint）
+// 对两个点进行约束修正，使它们的距离趋向于目标 distance（constraint）
 __host__ __device__ __forceinline__
 void relax_constraint_device(const float3* Pos, float3* Tmp,
                              const int l, const int m,
@@ -148,7 +145,7 @@ void normalize_device(float3 &normal) {
  * CUDA 核函数（GPU 部分）
  **************************************************/
 
-// propagate_kernel：每个线程更新一个顶点的位置（物理积分）
+// propagate_kernel：更新每个顶点的位置（积分）
 __global__
 void propagate_kernel(float3* vertices, float3* velocities, const int n, const float eps) {
     int j = blockDim.x * blockIdx.x + threadIdx.x;
@@ -159,7 +156,7 @@ void propagate_kernel(float3* vertices, float3* velocities, const int n, const f
     }
 }
 
-// validate_kernel：对部分邻域约束进行修正
+// validate_kernel：对邻域约束进行修正（这里只处理水平、垂直和一条对角约束）
 __global__
 void validate_kernel(float3* vertices, float3* temp,
                      const float cnstr_two, const float cnstr_dia,
@@ -168,19 +165,16 @@ void validate_kernel(float3* vertices, float3* temp,
     int i = blockDim.y * blockIdx.y + threadIdx.y;
     if(i < n && j < n) {
         int idx = i * n + j;
-        if(i < n - 1) {
+        if(i < n - 1)
             relax_constraint_device(vertices, temp, idx, idx + n, cnstr_two, bias);
-        }
-        if(j < n - 1) {
+        if(j < n - 1)
             relax_constraint_device(vertices, temp, idx, idx + 1, cnstr_two, bias);
-        }
-        if(i < n - 1 && j < n - 1) {
+        if(i < n - 1 && j < n - 1)
             relax_constraint_device(vertices, temp, idx, idx + n + 1, cnstr_dia, bias);
-        }
     }
 }
 
-// adjust_kernel：将 temp 中修正后的数据投影到球面上
+// adjust_kernel：将 temp 中的数据投影到球面上
 __global__
 void adjust_kernel(float3* temp, const int n) {
     int j = blockDim.x * blockIdx.x + threadIdx.x;
@@ -191,7 +185,7 @@ void adjust_kernel(float3* temp, const int n) {
     }
 }
 
-// update_normals_kernel：利用邻域 4 个顶点更新法线
+// update_normals_kernel：利用相邻 4 个顶点计算法线
 __global__
 void update_normals_kernel(const float3* vertices, float3* normals, const int n) {
     int j = blockDim.x * blockIdx.x + threadIdx.x;
@@ -216,61 +210,28 @@ void update_normals_kernel(const float3* vertices, float3* normals, const int n)
  * CUDA 物理计算调用（主机侧）
  **************************************************/
 
-// propagate_gpu：映射 VBO 数据，调用 propagate_kernel 更新顶点位置
-void propagate_gpu(const int n, const float eps) {
-    float3* d_vertices;
-    size_t num_bytes;
-    cudaGraphicsMapResources(1, &vbo_resource, 0);
-    cudaGraphicsResourceGetMappedPointer((void**)&d_vertices, &num_bytes, vbo_resource);
-    
+// simulate_gpu：在设备端 d_vertices, d_velocities, d_normals 上执行物理更新
+void simulate_gpu(const int n, const float eps, const int iters, const float bias) {
     dim3 block(16, 16);
     dim3 grid((n + block.x - 1)/block.x, (n + block.y - 1)/block.y);
-    // 注意：这里将全局的 d_velocities 作为速度参数传入
+    
+    // 调用 propagate_kernel 更新位置
     propagate_kernel<<<grid, block>>>(d_vertices, d_velocities, n, eps);
-    cudaGraphicsUnmapResources(1, &vbo_resource, 0);
-}
-
-// validate_gpu：对 VBO 数据进行多次约束迭代
-void validate_gpu(const int n, const int iters, const float bias) {
-    float3* d_vertices;
-    size_t num_bytes;
-    float3* d_temp;
+    
+    // 申请一个临时设备缓冲区 d_temp 用于约束迭代
+    float3* d_temp = nullptr;
     cudaMalloc(&d_temp, sizeof(float3) * n * n);
     
-    cudaGraphicsMapResources(1, &vbo_resource, 0);
-    cudaGraphicsResourceGetMappedPointer((void**)&d_vertices, &num_bytes, vbo_resource);
-    
-    dim3 block(16, 16);
-    dim3 grid((n + block.x - 1)/block.x, (n + block.y - 1)/block.y);
-    
-    for(int iter = 0; iter < iters; iter++){
+    for (int iter = 0; iter < iters; iter++) {
         cudaMemcpy(d_temp, d_vertices, sizeof(float3) * n * n, cudaMemcpyDeviceToDevice);
         validate_kernel<<<grid, block>>>(d_vertices, d_temp, cnstr_two, cnstr_dia, n, bias);
         adjust_kernel<<<grid, block>>>(d_temp, n);
         cudaMemcpy(d_vertices, d_temp, sizeof(float3) * n * n, cudaMemcpyDeviceToDevice);
     }
-    
     cudaFree(d_temp);
-    cudaGraphicsUnmapResources(1, &vbo_resource, 0);
-}
-
-// update_normals_gpu：映射 NBO 数据，调用 update_normals_kernel更新法线
-void update_normals_gpu(const int n) {
-    float3* d_vertices;
-    float3* d_normals;
-    size_t num_bytes;
-    cudaGraphicsMapResources(1, &vbo_resource, 0);
-    cudaGraphicsResourceGetMappedPointer((void**)&d_vertices, &num_bytes, vbo_resource);
     
-    cudaGraphicsMapResources(1, &nbo_resource, 0);
-    cudaGraphicsResourceGetMappedPointer((void**)&d_normals, &num_bytes, nbo_resource);
-    
-    dim3 block(16,16);
-    dim3 grid((n + block.x - 1)/block.x, (n + block.y - 1)/block.y);
+    // 更新法线
     update_normals_kernel<<<grid, block>>>(d_vertices, d_normals, n);
-    
-    cudaGraphicsUnmapResources(1, &vbo_resource, 0);
-    cudaGraphicsUnmapResources(1, &nbo_resource, 0);
 }
 
 /**************************************************
@@ -283,31 +244,30 @@ void display() {
     glLoadIdentity();
     glRotated((frames++) * 0.2, 0, 0, 1);
     
-    if (frames % 500 == 0) {
-        std::cout << frames * 1000.0 / glutGet(GLUT_ELAPSED_TIME) << std::endl;
-    }
+    if (frames % 500 == 0)
+        std::cout << "Frame: " << frames << std::endl;
     
     // 绘制参考球
     glColor3d(0, 0, 1);
     glutSolidSphere(0.97, 100, 100);
     
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_COLOR_ARRAY);
-    glEnableClientState(GL_NORMAL_ARRAY);
-    glEnableClientState(GL_INDEX_ARRAY);
+    // 调用 CUDA 模拟
+    simulate_gpu(N, EPS, ITERS, BIAS);
     
-    // 调用 CUDA 内核更新物理状态
-    propagate_gpu(N, EPS);
-    validate_gpu(N, ITERS, BIAS);
-    update_normals_gpu(N);
+    // 将设备端计算结果复制到 host 内存
+    cudaMemcpy(reinterpret_cast<float3*>(vertices.data()), d_vertices, sizeof(float3) * N * N, cudaMemcpyDeviceToHost);
+    cudaMemcpy(reinterpret_cast<float3*>(normals.data()), d_normals, sizeof(float3) * N * N, cudaMemcpyDeviceToHost);
     
+    // 更新 OpenGL 缓冲区数据（顶点与法线）
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * vertices.size(), vertices.data(), GL_STREAM_DRAW);
     glVertexPointer(3, GL_FLOAT, 0, 0);
     
     glBindBuffer(GL_ARRAY_BUFFER, cbo);
     glColorPointer(4, GL_FLOAT, 0, 0);
     
     glBindBuffer(GL_ARRAY_BUFFER, nbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * normals.size(), normals.data(), GL_STREAM_DRAW);
     glNormalPointer(GL_FLOAT, 0, 0);
     
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
@@ -318,6 +278,7 @@ void display() {
     glDisableClientState(GL_NORMAL_ARRAY);
     glDisableClientState(GL_INDEX_ARRAY);
     
+    // 周期性重新初始化数据（比如重置模拟）
     if ((int)(frames * G) % 1000 == 0)
         init_data(N);
     
@@ -329,7 +290,7 @@ void display() {
  * 数据与 OpenGL 缓冲区初始化
  **************************************************/
 void init_data(int n) {
-    // 初始化顶点：均匀分布在 x,y∈[-2,2]，z = 2 的平面上
+    // 初始化 host 侧顶点数据：均匀分布在 x,y∈[-2,2]，z = 2 的平面上
     vertices.clear();
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
@@ -342,7 +303,7 @@ void init_data(int n) {
         }
     }
     
-    // 初始化颜色（每个顶点设为红色 RGBA）
+    // 初始化颜色，每个顶点设为红色 (RGBA)
     colors.clear();
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
@@ -353,7 +314,7 @@ void init_data(int n) {
         }
     }
     
-    // 生成三角带 indices，用于渲染网格
+    // 生成三角带 indices，用于绘制整个网格
     indices.clear();
     for (int i = 0; i < n - 1; i++) {
         int base = i * n;
@@ -365,18 +326,20 @@ void init_data(int n) {
         indices.push_back(base + 2 * n - 1);
     }
     
-    // 初始化法线，先置 0；后续由 update_normals_gpu 更新
+    // 初始化法线（先全部置为 0，后续由 CUDA 更新）
     normals.resize(3 * n * n, 0.0f);
     
-    // 初始化 host 侧顶点数据（vertices 数组已经填充）
-    // 初始化 velocities（host 侧，仅用于参考，此数据不会上传到 GL，实际计算使用 device 上的 d_velocities）
-    velocities.resize(3 * n * n, 0.0f);
+    // 初始化 host 侧速度，每个顶点速度置 0
+    std::vector<float> temp_vel(3 * n * n, 0.0f);
     
-    // 计算约束距离，假设网格均匀分布
+    // 将 host 数据 sizes 调整为正确规模：
+    // vertices：3*n*n floats, colors：4*n*n floats, normals：3*n*n floats.
+    
+    // 计算约束参数（假设网格均匀）
     cnstr_two = vertices[3*n] - vertices[0];
     cnstr_dia = std::sqrt(2 * cnstr_two * cnstr_two);
     
-    // 创建 OpenGL 缓冲区
+    // 创建 OpenGL 缓冲区对象
     glGenBuffers(1, &vbo);
     glGenBuffers(1, &cbo);
     glGenBuffers(1, &nbo);
@@ -400,14 +363,18 @@ void init_data(int n) {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(GLuint) * indices.size(),
                  indices.data(), GL_STATIC_DRAW);
     
-    // 注册 VBO 和 NBO 到 CUDA
-    cudaGraphicsGLRegisterBuffer(&vbo_resource, vbo, cudaGraphicsMapFlagsWriteDiscard);
-    cudaGraphicsGLRegisterBuffer(&nbo_resource, nbo, cudaGraphicsMapFlagsWriteDiscard);
+    // 分配设备侧内存，并拷贝初始数据
+    if(d_vertices) cudaFree(d_vertices);
+    cudaMalloc(&d_vertices, sizeof(float3) * n * n);
+    cudaMemcpy(d_vertices, reinterpret_cast<float3*>(vertices.data()), sizeof(float3)*n*n, cudaMemcpyHostToDevice);
     
-    // 分配 device 侧速度数据，注意尺寸为 n*n 个 float3
     if(d_velocities) cudaFree(d_velocities);
     cudaMalloc(&d_velocities, sizeof(float3) * n * n);
     cudaMemset(d_velocities, 0, sizeof(float3) * n * n);
+    
+    if(d_normals) cudaFree(d_normals);
+    cudaMalloc(&d_normals, sizeof(float3) * n * n);
+    cudaMemset(d_normals, 0, sizeof(float3) * n * n);
 }
 
 /**************************************************
@@ -417,7 +384,7 @@ void init_GL(int* argc, char** argv) {
     glutInit(argc, argv);
     glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
     glutInitWindowSize(window_width, window_height);
-    glutCreateWindow("Position-Based Dynamics - CUDA");
+    glutCreateWindow("Position-Based Dynamics - CUDA (Explicit Copy)");
     glutDisplayFunc(display);
     
     glewInit();
