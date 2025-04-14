@@ -41,9 +41,8 @@ static GLuint vbo = 0;
 static GLuint cbo = 0;
 static GLuint nbo = 0;
 
-// host 侧数据
+// host 侧数据：顶点、颜色、法线、索引（数据格式均为连续数组）
 static std::vector<float> vertices; // 每三个 float 为一个顶点 (x,y,z)
-static std::vector<float> velocities;
 static std::vector<float> colors;
 static std::vector<float> normals;
 static std::vector<int> indices;
@@ -59,14 +58,17 @@ static float cnstr_dia;
 // 帧计数
 static size_t frames = 0;
 
+// 设备侧速度数据指针（用来更新物理积分）
+static float3* d_velocities = nullptr;
+
 /**************************************************
  * 设备侧辅助函数（__host__ __device__）
  **************************************************/
 
 // 更新一个顶点位置（device 函数）
+// 使用速度更新位置；若点的距离平方大于1，则在 z 方向上做修正
 __host__ __device__ __forceinline__
 void update_positions_device(float3 &pos, float3 &vel, const float eps) {
-    // 如果点距离原点的平方大于1，则在 z 方向上施加一个修正（类似将点拉回球体内部）
     float dist2 = pos.x * pos.x + pos.y * pos.y + pos.z * pos.z;
     if(dist2 > 1.0f)
         vel.z -= eps * G;
@@ -75,19 +77,17 @@ void update_positions_device(float3 &pos, float3 &vel, const float eps) {
     pos.z += eps * vel.z;
 }
 
-// 将顶点“贴”到球面上（device 函数）
-// 即如果距离大于 1，则缩放
+// 将顶点“贴”到球面上，如果距离大于 1，则按比例缩放到 1
 __host__ __device__ __forceinline__
 void adjust_positions_device(float3 &pos) {
     float len2 = pos.x*pos.x + pos.y*pos.y + pos.z*pos.z;
     float invrho = rsqrtf(len2);
-    // 如果 invrho < 1，说明 len > 1，则按比例缩放至长度为1
     pos.x *= (invrho < 1.0f ? invrho : 1.0f);
     pos.y *= (invrho < 1.0f ? invrho : 1.0f);
     pos.z *= (invrho < 1.0f ? invrho : 1.0f);
 }
 
-// 约束修正：对两个点拉回到目标距离 constraint
+// 约束修正：使两个点的距离趋向于目标 distance（constraint）
 __host__ __device__ __forceinline__
 void relax_constraint_device(const float3* Pos, float3* Tmp,
                              const int l, const int m,
@@ -107,7 +107,7 @@ void relax_constraint_device(const float3* Pos, float3* Tmp,
     Tmp[m].z += delta.z * factor;
 }
 
-// 计算交叉乘并累加到 Normal（device 函数）
+// 计算交叉乘并累加到 Normal
 __host__ __device__ __forceinline__
 void wedge_device(const float3* Vertices, float3 &Normal,
                   const int i, const int j, const int n,
@@ -148,7 +148,7 @@ void normalize_device(float3 &normal) {
  * CUDA 核函数（GPU 部分）
  **************************************************/
 
-// 每个线程更新一个顶点（物理积分）
+// propagate_kernel：每个线程更新一个顶点的位置（物理积分）
 __global__
 void propagate_kernel(float3* vertices, float3* velocities, const int n, const float eps) {
     int j = blockDim.x * blockIdx.x + threadIdx.x;
@@ -159,7 +159,7 @@ void propagate_kernel(float3* vertices, float3* velocities, const int n, const f
     }
 }
 
-// 对相邻约束进行修正，注意：这里简单处理部分约束
+// validate_kernel：对部分邻域约束进行修正
 __global__
 void validate_kernel(float3* vertices, float3* temp,
                      const float cnstr_two, const float cnstr_dia,
@@ -168,7 +168,6 @@ void validate_kernel(float3* vertices, float3* temp,
     int i = blockDim.y * blockIdx.y + threadIdx.y;
     if(i < n && j < n) {
         int idx = i * n + j;
-        // 这里只做一部分约束（实际应用中可能需要多个方向）
         if(i < n - 1) {
             relax_constraint_device(vertices, temp, idx, idx + n, cnstr_two, bias);
         }
@@ -181,7 +180,7 @@ void validate_kernel(float3* vertices, float3* temp,
     }
 }
 
-// 将 temp 中修正后的数据投影到球面上
+// adjust_kernel：将 temp 中修正后的数据投影到球面上
 __global__
 void adjust_kernel(float3* temp, const int n) {
     int j = blockDim.x * blockIdx.x + threadIdx.x;
@@ -192,7 +191,7 @@ void adjust_kernel(float3* temp, const int n) {
     }
 }
 
-// 更新每个顶点的法线（利用相邻 4 个顶点）
+// update_normals_kernel：利用邻域 4 个顶点更新法线
 __global__
 void update_normals_kernel(const float3* vertices, float3* normals, const int n) {
     int j = blockDim.x * blockIdx.x + threadIdx.x;
@@ -217,7 +216,7 @@ void update_normals_kernel(const float3* vertices, float3* normals, const int n)
  * CUDA 物理计算调用（主机侧）
  **************************************************/
 
-// propagate_gpu: 映射 VBO 数据，调用 propagate_kernel
+// propagate_gpu：映射 VBO 数据，调用 propagate_kernel 更新顶点位置
 void propagate_gpu(const int n, const float eps) {
     float3* d_vertices;
     size_t num_bytes;
@@ -226,32 +225,28 @@ void propagate_gpu(const int n, const float eps) {
     
     dim3 block(16, 16);
     dim3 grid((n + block.x - 1)/block.x, (n + block.y - 1)/block.y);
-    propagate_kernel<<<grid, block>>>(d_vertices, nullptr, n, eps); // 这里没有更新速度的逻辑，注意可扩展
+    // 注意：这里将全局的 d_velocities 作为速度参数传入
+    propagate_kernel<<<grid, block>>>(d_vertices, d_velocities, n, eps);
     cudaGraphicsUnmapResources(1, &vbo_resource, 0);
 }
 
-// validate_gpu: 对 VBO 数据进行多次约束迭代
+// validate_gpu：对 VBO 数据进行多次约束迭代
 void validate_gpu(const int n, const int iters, const float bias) {
     float3* d_vertices;
     size_t num_bytes;
-    // 申请 GPU 上的临时缓冲区
     float3* d_temp;
     cudaMalloc(&d_temp, sizeof(float3) * n * n);
     
-    // 映射 VBO
     cudaGraphicsMapResources(1, &vbo_resource, 0);
     cudaGraphicsResourceGetMappedPointer((void**)&d_vertices, &num_bytes, vbo_resource);
     
     dim3 block(16, 16);
     dim3 grid((n + block.x - 1)/block.x, (n + block.y - 1)/block.y);
     
-    // 迭代多次
     for(int iter = 0; iter < iters; iter++){
-        // 复制 d_vertices 到 d_temp
         cudaMemcpy(d_temp, d_vertices, sizeof(float3) * n * n, cudaMemcpyDeviceToDevice);
         validate_kernel<<<grid, block>>>(d_vertices, d_temp, cnstr_two, cnstr_dia, n, bias);
         adjust_kernel<<<grid, block>>>(d_temp, n);
-        // 把修正后 d_temp 内容复制回 d_vertices
         cudaMemcpy(d_vertices, d_temp, sizeof(float3) * n * n, cudaMemcpyDeviceToDevice);
     }
     
@@ -259,7 +254,7 @@ void validate_gpu(const int n, const int iters, const float bias) {
     cudaGraphicsUnmapResources(1, &vbo_resource, 0);
 }
 
-// update_normals_gpu: 映射 NBO 数据，调用 update_normals_kernel
+// update_normals_gpu：映射 NBO 数据，调用 update_normals_kernel更新法线
 void update_normals_gpu(const int n) {
     float3* d_vertices;
     float3* d_normals;
@@ -306,7 +301,6 @@ void display() {
     validate_gpu(N, ITERS, BIAS);
     update_normals_gpu(N);
     
-    // 绑定并上传顶点数据、颜色数据和法线数据到 GPU（数据已经在 VBO/NBO 中更新）
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glVertexPointer(3, GL_FLOAT, 0, 0);
     
@@ -324,7 +318,6 @@ void display() {
     glDisableClientState(GL_NORMAL_ARRAY);
     glDisableClientState(GL_INDEX_ARRAY);
     
-    // 每隔一定帧重置数据
     if ((int)(frames * G) % 1000 == 0)
         init_data(N);
     
@@ -349,17 +342,7 @@ void init_data(int n) {
         }
     }
     
-    // 初始化 velocities，每个顶点速度置 0
-    velocities.resize(3 * n * n, 0.0f);
-    
-    // 计算约束距离：cnstr_two 为相邻点的距离（按 x 方向差值），cnstr_dia 为对角距离
-    cnstr_two = vertices[3*n] - vertices[0];
-    cnstr_dia = std::sqrt(2 * cnstr_two * cnstr_two);
-    
-    // 初始化法线（初始随便设置，由 update_normals_gpu 更新）
-    normals.resize(3 * n * n, 0.0f);
-    
-    // 初始化颜色，每个顶点设为红色 (RGBA)
+    // 初始化颜色（每个顶点设为红色 RGBA）
     colors.clear();
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
@@ -370,7 +353,7 @@ void init_data(int n) {
         }
     }
     
-    // 生成三角带 indices，用于渲染整个网格
+    // 生成三角带 indices，用于渲染网格
     indices.clear();
     for (int i = 0; i < n - 1; i++) {
         int base = i * n;
@@ -382,7 +365,18 @@ void init_data(int n) {
         indices.push_back(base + 2 * n - 1);
     }
     
-    // 创建 OpenGL 缓冲区对象
+    // 初始化法线，先置 0；后续由 update_normals_gpu 更新
+    normals.resize(3 * n * n, 0.0f);
+    
+    // 初始化 host 侧顶点数据（vertices 数组已经填充）
+    // 初始化 velocities（host 侧，仅用于参考，此数据不会上传到 GL，实际计算使用 device 上的 d_velocities）
+    velocities.resize(3 * n * n, 0.0f);
+    
+    // 计算约束距离，假设网格均匀分布
+    cnstr_two = vertices[3*n] - vertices[0];
+    cnstr_dia = std::sqrt(2 * cnstr_two * cnstr_two);
+    
+    // 创建 OpenGL 缓冲区
     glGenBuffers(1, &vbo);
     glGenBuffers(1, &cbo);
     glGenBuffers(1, &nbo);
@@ -409,6 +403,11 @@ void init_data(int n) {
     // 注册 VBO 和 NBO 到 CUDA
     cudaGraphicsGLRegisterBuffer(&vbo_resource, vbo, cudaGraphicsMapFlagsWriteDiscard);
     cudaGraphicsGLRegisterBuffer(&nbo_resource, nbo, cudaGraphicsMapFlagsWriteDiscard);
+    
+    // 分配 device 侧速度数据，注意尺寸为 n*n 个 float3
+    if(d_velocities) cudaFree(d_velocities);
+    cudaMalloc(&d_velocities, sizeof(float3) * n * n);
+    cudaMemset(d_velocities, 0, sizeof(float3) * n * n);
 }
 
 /**************************************************
