@@ -1,3 +1,0 @@
-/afs/andrew.cmu.edu/usr6/yulinw2/private/15618/parallel_project/build/CMakeFiles/parallel_project.dir
-/afs/andrew.cmu.edu/usr6/yulinw2/private/15618/parallel_project/build/CMakeFiles/edit_cache.dir
-/afs/andrew.cmu.edu/usr6/yulinw2/private/15618/parallel_project/build/CMakeFiles/rebuild_cache.dir

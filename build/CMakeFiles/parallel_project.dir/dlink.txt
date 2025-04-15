@@ -1,1 +1,0 @@
-/usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler  --compiler-options -fPIC --generate-code=arch=compute_75,code=[compute_75,sm_75] -Xcompiler=-fPIC -Wno-deprecated-gpu-targets -shared -dlink CMakeFiles/parallel_project.dir/cloth_sim.cu.o -o CMakeFiles/parallel_project.dir/cmake_device_link.o   -lcudart -lcudadevrt -lcudart_static -lrt -lpthread -ldl 
