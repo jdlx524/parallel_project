@@ -36,7 +36,7 @@
         </div>
         
         <div id="summary" class="section active">
-            <p>We aim to implement a parallel cloth simulation using a Mass-Spring model. The simulation will run efficiently on GPUs using CUDA to accelerate computations. We will explore different parallelization strategies to optimize performance and scalability.</p>
+            <p>We aim to implement a parallel cloth simulation using a Mass-Spring model. The simulation will run efficiently on GPUs using CUDA to accelerate computations. <span style="color:red;">We started from the open-source library cuda_clothes, implemented basic self-collision detection, introduced a grid-based broad-phase collision detection method, and an iterative refinement strategy to enhance robustness.</span></p>
         </div>
 
         <div id="background" class="section">
@@ -54,18 +54,18 @@
                 or multi-threaded architectures to increase overall simulation performance.
             </p>
 
-            <p>Below is a simplified pseudocode demonstrating the simulation workflow:</p>
-
-            <pre><code>
-                initialize cloth mesh
-                while simulation is running:
-                    for each sub-region or mesh partition in parallel:
-                        compute internal forces (tension, bending, etc.)
-                        detect and resolve collisions with environment
-                        update positions and velocities of vertices
-                    synchronize updated mesh state across sub-regions
-                render or output simulation results
-            </code></pre>
+            <p><span style="color:red;">We have updated the workflow to include synchronization, spatial grid construction, and iterative collision detection refinement:</span></p>
+        <pre><code style="color:red;">
+initialize cloth mesh
+while simulation running:
+    update vertex positions (synchronized)
+    construct/update spatial grid
+    repeat until stable:
+        detect collisions using spatial grid
+        resolve collisions
+    synchronize updated mesh state
+render simulation results
+        </code></pre>
             <h3>Possible Parallel</h3>
             <p>By partitioning the cloth mesh into smaller sub-regions and processing them in parallel, each thread or computational unit only needs to handle a limited set of vertices
                 or triangles, thus reducing the computational cost and memory access overhead for collision detection and other tasks. Furthermore, as the cloth moves or collision demands
@@ -88,7 +88,7 @@
                 and any collisions across boundaries of these sub-regions must be handled without race conditions or data inconsistencies. On hardware with limited shared memory or certain GPU architectures,
                 the irregular access patterns and sudden spikes in computational requirements can cause bottlenecks and underutilized resources. Consequently, one of the core lessons to be learned in this
                 project is how to design dynamic, load-balanced partitioning strategies and synchronization mechanisms that accommodate frequent changes in the simulation state while still achieving efficient parallelization.</p>
-
+            <p><span style="color:red;">Additional concerns include collision tunneling and balancing accuracy with efficiency.</span><\p>
         </div>
 
         <div id="resources" class="section">
@@ -108,12 +108,6 @@
                     <ul>
                         <li>Integrate dynamic partitioning and task allocation methods into an existing parallel cloth simulation framework.</li>
                         <li>Compare our approach against static partitioning to demonstrate performance benefits.</li>
-                    </ul>
-                </li>
-                <li><strong>Multi-Threaded CPU Performance Analysis</strong>
-                    <ul>
-                        <li>Run simulations on multi-core CPUs to measure scaling efficiency as core count increases.</li>
-                        <li>Analyze task distribution overhead and load balancing effectiveness.</li>
                     </ul>
                 </li>
                 <li><strong>Collision Handling and Numerical Integration</strong>
@@ -143,7 +137,6 @@
                 <li><strong>GPU Acceleration</strong>
                     <ul>
                         <li>Investigate GPU offloading to accelerate computationally expensive simulation steps.</li>
-                        <li>Compare CPU vs. GPU performance for key simulation components.</li>
                     </ul>
                 </li>
                 <li><strong>Adaptive Workload Distribution</strong>
@@ -243,8 +236,8 @@
                     <li><strong>Refine and optimize the dynamic strategy</strong>
                         <ul>
                             <li>Adjust partitioning granularity and update intervals. Try different cloth parameters and resolution.</li>
-                            <li>Improve collision handling and memory access patterns (e.g., bounding volume hierarchies, spatial hashing). </li>
-                            <li>Apply partial grid update method. Try dynamic work queue.</li>
+                            <li><span style="color:red;">Improve collision handling and memory access patterns (e.g., bounding volume hierarchies, spatial hashing). </span></li>
+                            <li><span style="color:red;">Apply partial grid update method. Try dynamic work queue.</span></li>
                         </ul>
                     </li>
                     <li><strong>Conduct thorough performance testing</strong>
